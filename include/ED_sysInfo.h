@@ -5,6 +5,7 @@
 #include "esp_flash.h"
 #include "esp_mac.h"
 #include <esp_partition.h>
+#include <string>
 
 
 namespace ED_SYSINFO
@@ -17,5 +18,5 @@ void print_partitions() ;
 void dumpSysInfo();
 void print_dns_info();
 void dump_ca_cert(const uint8_t *ca_crt_start,const uint8_t *ca_crt_end);
-void DNSlookup(std::string nodeName) ;
+void DNSlookup(const char* nodeName) ;
 }//namespace

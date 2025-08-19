@@ -6,15 +6,15 @@
 
 namespace ED_SYSINFO {
 static const char *TAG = "ED_SYSINFO";
-void DNSlookup(std::string nodeName) {
+void DNSlookup(const char* nodeName) {
   struct addrinfo hints = {};
   struct addrinfo *res;
-  int err = getaddrinfo(nodeName.c_str(), NULL, &hints, &res);
+  int err = getaddrinfo(nodeName, NULL, &hints, &res);
   if (err != 0 || res == NULL) {
-    ESP_LOGE(TAG, "DNS lookup failed for %s", nodeName.c_str());
+    ESP_LOGE(TAG, "DNS lookup failed for %s", nodeName);
   } else {
     struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
-    ESP_LOGI(TAG, "%s resolved to: %s", nodeName.c_str(),
+    ESP_LOGI(TAG, "%s resolved to: %s", nodeName,
              inet_ntoa(addr->sin_addr));
     freeaddrinfo(res);
   }
