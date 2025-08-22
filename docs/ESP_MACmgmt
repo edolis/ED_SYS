@@ -1,0 +1,51 @@
+
+---
+
+## 🧠 MAC Address Types in ESP32
+
+| Type                  | Description                                                                 | Permanence       | Source Function                          |
+|-----------------------|------------------------------------------------------------------------------|------------------|-------------------------------------------|
+| **Factory MAC**       | Burned by Espressif during production                                        | Permanent (eFuse) | `esp_efuse_mac_get_default()`             |
+| **Custom MAC**        | Burned by user into eFuse (write-once)                                       | Permanent (eFuse) | `esp_efuse_mac_get_custom()`              |
+| **Base MAC (Software)** | Temporary override used to derive interface MACs (Wi-Fi, BT, etc.)         | Volatile (RAM)    | `esp_base_mac_addr_set()`                |
+
+---
+
+## 🔧 Behavior Summary
+
+- **Factory MAC**: Always available, read-only, safe fallback.
+- **Custom MAC**: Optional, burned once into eFuse, cannot be changed.
+- **Base MAC (Software)**: Can be set at runtime before initializing interfaces. Overrides factory/custom MAC temporarily.
+
+---
+
+## 🔁 Switching Between MACs
+
+You can choose which MAC to use at boot:
+- Use factory: `esp_efuse_mac_get_default()` → `esp_base_mac_addr_set()`
+- Use custom: `esp_efuse_mac_get_custom()` → `esp_base_mac_addr_set()`
+- Use temporary MAC (e.g. from NVS or flash): just pass it to `esp_base_mac_addr_set()`
+
+⚠️ Once interfaces like Wi-Fi or Ethernet are initialized, the base MAC is locked for that session.
+
+---
+
+## 🔒 eFuse Notes
+
+- eFuse bits are **write-once**: once set to `1`, they cannot be reset.
+- Factory MAC is **always read-only**.
+- Custom MAC must be burned carefully — irreversible.
+
+---
+
+## 🧰 Key Functions
+
+| Function                          | Purpose                                      |
+|----------------------------------|----------------------------------------------|
+| `esp_base_mac_addr_set()`        | Sets base MAC used to derive interface MACs |
+| `esp_efuse_mac_get_default()`    | Gets factory MAC from eFuse                 |
+| `esp_efuse_mac_get_custom()`     | Gets custom MAC from eFuse (if burned)      |
+
+---
+
+If you’re building a boot-time MAC selection system, you can combine these with NVS or config flags to dynamically choose the MAC source. Want help sketching that logic out?

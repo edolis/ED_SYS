@@ -5,8 +5,87 @@
 #include <string>
 
 namespace ED_SYSINFO {
-static const char *TAG = "ED_SYSINFO";
-void DNSlookup(const char* nodeName) {
+static constexpr char *TAG = "ED_SYSINFO";
+
+// #region firmwareInfo 
+
+fwInfo::VersionInfo *fwInfo::_Vinfo = nullptr;
+
+const char *fwInfo::PrjName() { return getDesc()->project_name; }
+
+const char *fwInfo::AppCompileDate() { return getDesc()->date; }
+
+const fwInfo::VersionInfo &fwInfo::AppVers() { return *_Vinfo; }
+
+const char *fwInfo::AppCompileTime() { return getDesc()->time; }
+
+const char *fwInfo::AppELFSha256() {
+  static char sha256_str[65] = ""; // initialized to empty string
+
+  if (sha256_str[0] == '\0') { // check if it's still empty
+    for (int i = 0; i < 32; ++i) {
+      sprintf(&sha256_str[i * 2], "%02x", getDesc()->app_elf_sha256[i]);
+    }
+  }
+
+  return sha256_str;
+}
+
+const char *fwInfo::AppESPIDF() { return esp_get_idf_version(); }
+
+const char *fwInfo::_AppVersStr() { return getDesc()->version; }
+
+fwInfo::VersionInfo &parseVersion(const char *versionStr) {
+  static fwInfo::VersionInfo info;
+  info.isValidGIT = true;
+  if (!versionStr)
+    return info;
+
+  info.full = versionStr;
+  std::string ver = versionStr;
+
+  if (ver[0] == 'v')
+    ver = ver.substr(1); // Strip 'v'
+  else
+    info.isValidGIT = false;
+
+  // Split by '-'
+  std::vector<std::string> parts;
+  std::stringstream ss(ver);
+  std::string item;
+  while (std::getline(ss, item, '-')) {
+    parts.push_back(item);
+  }
+
+  // Parse version numbers
+  sscanf(parts[0].c_str(), "%d.%d.%d", &info.major, &info.minor, &info.patch);
+
+  // Check for commits ahead
+  if (parts.size() > 1 && std::isdigit(parts[1][0])) {
+    info.commitsAhead = std::stoi(parts[1]);
+  }
+
+  if (parts.size() > 2) {
+    info.GITcommitID = parts[2];
+  }
+  if (parts.size() > 3 && parts[3] == "dirty") {
+    info.isDirty = true;
+  }
+  return info;
+};
+
+const esp_app_desc_t *fwInfo::getDesc() {
+  static const esp_app_desc_t *desc = nullptr;
+  if (desc == nullptr) {
+    desc = esp_app_get_description();
+    _Vinfo = &parseVersion(desc->version);
+  }
+  return desc;
+}
+
+// #endregion
+
+void DNSlookup(const char *nodeName) {
   struct addrinfo hints = {};
   struct addrinfo *res;
   int err = getaddrinfo(nodeName, NULL, &hints, &res);
@@ -14,8 +93,7 @@ void DNSlookup(const char* nodeName) {
     ESP_LOGE(TAG, "DNS lookup failed for %s", nodeName);
   } else {
     struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
-    ESP_LOGI(TAG, "%s resolved to: %s", nodeName,
-             inet_ntoa(addr->sin_addr));
+    ESP_LOGI(TAG, "%s resolved to: %s", nodeName, inet_ntoa(addr->sin_addr));
     freeaddrinfo(res);
   }
 }
