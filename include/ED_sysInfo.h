@@ -3,16 +3,17 @@
 #include "ED_json.h" // to grab the interface specs
 #include "esp_app_desc.h"
 /*
-BT_ENABLED must be defined in platformio ini as environment build flag, to enable nluetooth operations, e.g.
-[env:main_BT]
-build_flags= -D BT_ENABLED -D DEBUG_MODE
+BT_ENABLED must be defined in platformio ini as environment build flag, to
+enable nluetooth operations, e.g. [env:main_BT] build_flags= -D BT_ENABLED -D
+DEBUG_MODE
 
-besides this conditional compilation, if is used by the pre-build script merge_sdkconfig
-to pull in the sdkconfig the required DT components.
-Bluetooth is conditional as it pulls the headers required to monitor the bluetooth activity
-and realign the MAC address in the rare case the MAC base address has been changed by the user.
-if BT_ENABLED is not defined, the Bluetooth MAC is the one calculated on the base of the
-factory base MAC OR the efuse override by the user OR by the software nase MAC set by Wifi
+besides this conditional compilation, if is used by the pre-build script
+merge_sdkconfig to pull in the sdkconfig the required DT components. Bluetooth
+is conditional as it pulls the headers required to monitor the bluetooth
+activity and realign the MAC address in the rare case the MAC base address has
+been changed by the user. if BT_ENABLED is not defined, the Bluetooth MAC is the
+one calculated on the base of the factory base MAC OR the efuse override by the
+user OR by the software nase MAC set by Wifi
 
 */
 #ifdef BT_ENABLED
@@ -144,7 +145,23 @@ private:
 };
 
 class MacStorage {
+private:
+  uint8_t _mac_addr[6];
+
 public:
+  void initListener() {
+
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, &on_wifi_start,
+                               NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &on_wifi_start,
+                               NULL);
+
+#ifdef BT_ENABLED
+
+    // esp_ble_gap_register_callback(gap_event_handler);
+#endif
+  }
+
   static constexpr esp_mac_type_t ESP_MAC_NOTSET =
       static_cast<esp_mac_type_t>(-1);
   // Default constructor (initializes to all zeros)
@@ -163,43 +180,31 @@ public:
 private:
   static MacAddress
       _mac[sizeof(esp_mac_type_str) / sizeof(esp_mac_type_str[0])];
-  void on_wifi_start(void *arg, esp_event_base_t event_base, int32_t event_id,
-                     void *event_data) {
+  static void on_wifi_start(void *arg, esp_event_base_t event_base,
+                            int32_t event_id, void *event_data) {
     uint8_t mac[6];
     esp_wifi_get_mac(
         (event_id == WIFI_EVENT_STA_START) ? WIFI_IF_STA : WIFI_IF_AP, mac);
     // Update your singleton here
-  }
+  };
 
 #ifdef BT_ENABLED
-  void gap_event_handler(esp_gap_ble_cb_event_t event,
-                         esp_ble_gap_cb_param_t *param) {
-    if (event == ESP_GAP_BLE_ADV_START_COMPLETE_EVT &&
-        param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
-      MacAddress::get().refresh(ESP_MAC_BT);
-    }
+//   void gap_event_handler(esp_gap_ble_cb_event_t event,
+//                          esp_ble_gap_cb_param_t *param) {
+//     if (event == ESP_GAP_BLE_ADV_START_COMPLETE_EVT &&
+//         param->adv_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+//       MacAddress::get().refresh(ESP_MAC_BT); //TODO
+// }
+
+// };
 #endif
-    void initListener() {
 
-      esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START,
-                                 &on_wifi_start, NULL);
-      esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START,
-                                 &on_wifi_start, NULL);
-
-#ifdef BT_ENABLED
-
-      esp_ble_gap_register_callback(gap_event_handler);
-#endif
-    }
-
-    // TODO for bluetooth, it's more complicated. see
-    //  esp_event_handler_register(BLUETOOTH_EVENT,
-    //                             ESP_EVENT_BT_CONTROLLER_INIT_FINISH,
-    //                             &MacTracker::on_bt_ready, NULL);
-  }
-  uint8_t _mac_addr[6];
-  esp_mac_type_t mactype;
+  // TODO for bluetooth, it's more complicated. see
+  //  esp_event_handler_register(BLUETOOTH_EVENT,
+  //                             ESP_EVENT_BT_CONTROLLER_INIT_FINISH,
+  //                             &MacTracker::on_bt_ready, NULL);
 };
+  // esp_mac_type_t mactype;
 
 // TODO add chip temperature sensing , section 34.3 of the ESP32C3 technical
 // documentation

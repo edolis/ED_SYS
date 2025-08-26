@@ -5,9 +5,9 @@
 #include <string>
 
 namespace ED_SYSINFO {
-static constexpr char *TAG = "ED_SYSINFO";
+static const char *TAG = "ED_SYSINFO";
 
-// #region firmwareInfo 
+// #region firmwareInfo
 
 fwInfo::VersionInfo *fwInfo::_Vinfo = nullptr;
 
