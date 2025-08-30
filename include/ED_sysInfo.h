@@ -29,8 +29,14 @@ user OR by the software nase MAC set by Wifi
 #include <esp_event.h>
 #include <esp_partition.h>
 #include <esp_wifi.h>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+
+
+static constexpr esp_mac_type_t ESP_MAC_NOTSET =
+    static_cast<esp_mac_type_t>(-1);
 
 namespace ED_SYSINFO {
 
@@ -123,70 +129,88 @@ public:
   MacAddress() { memset(_mac_addr, 0, 6); }
 
   // Constructor to initialize with a C-style array
-  MacAddress(const uint8_t mac[6]) { memcpy(_mac_addr, mac, 6); }
+  MacAddress(const uint8_t mac[6]) : MacAddress() { set(mac); }
 
   // For read-only access on a const object
   const uint8_t &operator[](size_t index) const { return _mac_addr[index]; }
   // Get a pointer to the internal array
   const uint8_t *get() const { return _mac_addr; }
   // returns a pointer to the internal class allowing modifications.
-  uint8_t *set() { return _mac_addr; }
+  uint8_t *set(const uint8_t mac[6]) {
+    if (!isZeroMac(mac)) {
+      _isValid = true;
+      memcpy(_mac_addr, mac, 6);
+    }
+    return _mac_addr;
+  }
   // Formats the MAC address into a provided buffer.
   // The buffer must be at least 18 characters long.
-  char *toString(char *buffer, size_t buffer_size) const {
+  char *toString(char *buffer, size_t buffer_size, char separator = ':') const {
     if (buffer && buffer_size >= 18) {
-      snprintf(buffer, buffer_size, MACSTR, MAC2STR(_mac_addr));
-    }
+      snprintf(buffer, buffer_size, "%02X%c%02X%c%02X%c%02X%c%02X%c%02X",
+               _mac_addr[0], separator, _mac_addr[1], separator, _mac_addr[2],
+               separator, _mac_addr[3], separator, _mac_addr[4], separator,
+               _mac_addr[5]
+
+      );
+    };
     return buffer;
-  }
+  };
+  // returns false if MAC is all zeroes.
+  bool isValid() const { return _isValid; }
 
 private:
+  bool isZeroMac(const uint8_t mac[6]) const {
+    return memcmp(mac, zeroMac, 6) == 0;
+  }
+  static inline const uint8_t zeroMac[6] = {
+      0}; // zeroed MAC used as a reference to detect invalidity
   uint8_t _mac_addr[6];
+  bool _isValid = false;
 };
 
-class MacStorage {
+/**
+ * @brief storage class for ESP MAC addresses,
+ * with option to track potential changes at network connection
+ * due to code overrifing base MAC
+ *
+ */
+class ESP_MACstorage {
 private:
-  uint8_t _mac_addr[6];
+  static std::mutex macMapMutex;
+  ESP_MACstorage() =
+      delete; // singleton. in case initlistener should become default
+              // behaviour, change to hidden generation of an instance
+  // which calls the function in its instance constructor
+
+  // the storage map for the MAC of the device
+  static std::unordered_map<esp_mac_type_t, MacAddress> ESPmacMap;
 
 public:
-  void initListener() {
+  /// @brief  initializes the listeners which verify, at connection with Wifi or
+  /// Bluetooth,
+  // whether the base MAC has been overridden by the user.
+  // call the method only if monitoring change of base address by obscure module
+  // is needed
+  static void initListener();
 
-    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, &on_wifi_start,
-                               NULL);
-    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &on_wifi_start,
-                               NULL);
-
-#ifdef BT_ENABLED
-
-    // esp_ble_gap_register_callback(gap_event_handler);
-#endif
-  }
-
-  static constexpr esp_mac_type_t ESP_MAC_NOTSET =
-      static_cast<esp_mac_type_t>(-1);
-  // Default constructor (initializes to all zeros)
-  MacStorage() {
-    memset(_mac_addr, 0, 6);
-    initListener();
-  }
-
-  // Constructor to initialize with a C-style array
-  MacStorage(const uint8_t mac[6]) {
-    memcpy(_mac_addr, mac, 6);
-    initListener();
-  }
-  MacAddress getMac(esp_mac_type_t type) { return _mac[type]; };
+  // returns the Mac Address of the specified type
+  static MacAddress getMac(esp_mac_type_t type);
+  static const std::unordered_map<esp_mac_type_t, MacAddress> &getMacMap() {
+    return ESPmacMap;
+  };
 
 private:
-  static MacAddress
-      _mac[sizeof(esp_mac_type_str) / sizeof(esp_mac_type_str[0])];
+  static std::once_flag macInitFlag;
+  static void initMacs();
+  friend void
+  _preloadMacs(); // external function which triggers boot-time preload.
+  // static MacAddress
+  //     _mac[sizeof(esp_mac_type_str) / sizeof(esp_mac_type_str[0])];
   static void on_wifi_start(void *arg, esp_event_base_t event_base,
-                            int32_t event_id, void *event_data) {
-    uint8_t mac[6];
-    esp_wifi_get_mac(
-        (event_id == WIFI_EVENT_STA_START) ? WIFI_IF_STA : WIFI_IF_AP, mac);
-    // Update your singleton here
-  };
+                            int32_t event_id, void *event_data);
+
+  static void ensureMacsInitialized();
 
 #ifdef BT_ENABLED
 //   void gap_event_handler(esp_gap_ble_cb_event_t event,
@@ -204,7 +228,8 @@ private:
   //                             ESP_EVENT_BT_CONTROLLER_INIT_FINISH,
   //                             &MacTracker::on_bt_ready, NULL);
 };
-  // esp_mac_type_t mactype;
+
+// esp_mac_type_t mactype;
 
 // TODO add chip temperature sensing , section 34.3 of the ESP32C3 technical
 // documentation

@@ -169,4 +169,98 @@ void dumpSysInfo() {
            mac[3], mac[4], mac[5]);
 }
 
+// #region ESP_MACstorage
+
+// ESP_MACstorage::ESP_MACstorage() {
+
+//   initListener();
+// }
+
+// ESP_MACstorage::ESP_MACstorage(const uint8_t mac[6]) {
+//     memcpy(_mac_addr, mac, 6);
+//     initListener();
+//   }
+
+std::once_flag ESP_MACstorage::macInitFlag;
+std::mutex ESP_MACstorage::macMapMutex;
+
+std::unordered_map<esp_mac_type_t, MacAddress> ESP_MACstorage::ESPmacMap{};
+
+void ESP_MACstorage::initListener() {
+
+  esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, &on_wifi_start,
+                             NULL);
+  esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, &on_wifi_start,
+                             NULL);
+
+#ifdef BT_ENABLED
+
+  // esp_ble_gap_register_callback(gap_event_handler);
+#endif
+}
+
+MacAddress ESP_MACstorage::getMac(esp_mac_type_t type) {
+  // if (ESPmacMap.empty()) //this shouldn't be required, as preloadMacs will
+  // trigger loading at boot.
+  //   initMacs();
+  ensureMacsInitialized();
+  ESP_LOGI("MACstorage", "Looking up MAC type: %d", static_cast<int>(type));
+  std::lock_guard<std::mutex> lock(macMapMutex);
+  auto it = ESPmacMap.find(type);
+  if (it != ESPmacMap.end()) {
+    return it->second;
+  }
+
+  ESP_LOGW("MACstorage", "MAC type %d not found", type);
+  return MacAddress(); // fallback: zeroed MAC which is internally flagged as
+                       // invalid
+};
+
+void ESP_MACstorage::initMacs() {
+  for (int i = 0; i < sizeof(esp_mac_type_str) / sizeof(esp_mac_type_str[0]);
+       ++i) {
+    esp_mac_type_t type = static_cast<esp_mac_type_t>(i);
+
+    // Skip types that are not 6 bytes or not supported
+    if (type == ESP_MAC_IEEE802154 || type == ESP_MAC_EFUSE_EXT) {
+      continue;
+    }
+
+    uint8_t mac[6];
+    esp_err_t err = esp_read_mac(mac, type);
+    if (err == ESP_OK) {
+      ESP_LOGI("MACstorage", "assigning to internal  ESPmacMap MAC type: %d",
+               static_cast<int>(type));
+      std::lock_guard<std::mutex> lock(macMapMutex);
+      ESPmacMap[type] = MacAddress(mac);
+    } else {
+      ESP_LOGW("ESP_MACstorage", "Could not read MAC for type %s",
+               esp_mac_type_str[i]);
+    }
+    // ESP_LOGI("MACstorage", "initmacs exits normally");
+  }
+}
+
+void ESP_MACstorage::on_wifi_start(void *arg, esp_event_base_t event_base,
+                                   int32_t event_id, void *event_data) {
+  uint8_t mac[6];
+  esp_wifi_get_mac(
+      (event_id == WIFI_EVENT_STA_START) ? WIFI_IF_STA : WIFI_IF_AP, mac);
+  ESPmacMap[(event_id == WIFI_EVENT_STA_START)
+                ? esp_mac_type_t::ESP_MAC_WIFI_STA
+                : ESP_MAC_WIFI_SOFTAP] = MacAddress(mac);
+};
+
+void ESP_MACstorage::ensureMacsInitialized() {
+  std::call_once(macInitFlag, []() { ESP_MACstorage::initMacs(); });
+}
+
+// preloads at boot the MAC addresses
+
+// __attribute__((constructor))  void _preloadMacs() {
+//   ESP_MACstorage::initMacs();
+// } //does not guarantee it is run before main, don't use
+
+// #endregion
+
 } // namespace ED_SYSINFO
