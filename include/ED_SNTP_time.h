@@ -95,7 +95,30 @@ static constexpr const char *NTPSERVER[] = {
     "ntp.inrim.it", "time.cloudflare.com", "europe.pool.ntp.org",
     "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
 #endif
+enum class TICKTYPE{
+  TICK_MS, // ms, from xTaskGetTickCount()
+  TICK_US// us, from esp_timer_get_time()
+};
 
+enum class ISOFORMAT {
+    DATE_ONLY,           // YYYY-MM-DD
+    DATETIME_LOCAL,      // YYYY-MM-DDTHH:MM:SS
+    DATETIME_UTC,        // YYYY-MM-DDTHH:MM:SSZ
+    DATETIME_OFFSET,     // YYYY-MM-DDTHH:MM:SS+0200
+    DATETIME_UTC_OFFSET,     // YYYY-MM-DDTHH:MM:SSZ+0200
+    WEEK_DATE,           // YYYY-Www-D
+    ORDINAL_DATE         // YYYY-DDD
+};
+
+static const char* ISOFORMAT_STRINGS[] = {
+    "%Y-%m-%d",                  // DATE_ONLY
+    "%Y-%m-%dT%H:%M:%S",         // DATETIME_LOCAL
+    "%Y-%m-%dT%H:%M:%SZ",        // DATETIME_UTC (use gmtime_r)
+    "%Y-%m-%dT%H:%M:%S%z",       // DATETIME_OFFSET (post-process to insert colon)
+    "%Y-%m-%dT%H:%M:%SZ%z",      // DATETIME_UTC_OFFSET (always requires post-process to insert correct %z component)
+    "%G-W%V-%u",                 // WEEK_DATE
+    "%Y-%j"                      // ORDINAL_DATE
+};
 
 
 /**
@@ -127,31 +150,37 @@ public:
   static void initialize(uint8_t serverIndex, TimeZone tz = TimeZone::CET);
 //   static bool waitForSync(int timeoutSeconds = 10);
   // local clock time, according to the set timezone. conforming both to
-  // timezone and its daylight saving settings
-  static std::string getClockTime();
+  // timezone and its daylight saving settings or UTC depending on ttype
+  static std::string getClockTime( ISOFORMAT format=ISOFORMAT::DATETIME_UTC_OFFSET);
+ /**
+   * @brief returns the clock time in the specified format.
+   * UTC formats implement UTC times, the remaining local time with the timezone
+   * shift including daylight saving settings.
+   *
+   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
+   * @param ttype TICKTYPE:TICK_MS or TICKTYPE:TICK_MS to specify if the tick is in milli or micro seconds
+   * @return the string representation of the clock time
+   */
+  static std::string getClockTime(uint64_t rtTicks,TICKTYPE ttype=TICKTYPE::TICK_MS, ISOFORMAT format=ISOFORMAT::DATETIME_OFFSET);
+
+
   /**
    * @brief returns the UTC time in Unix format,
    *
    * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
    * @return uint64_t the Unix representation of UTC code
    */
-  static uint64_t getUTCUnixTime(uint64_t rtTicks);
+  static uint64_t getEpochTime(uint64_t rtTicks);
   /**
    * @brief returns the current UTC time in Unix format,
    *
    * @return uint64_t the Unix representation of UTC current time
    */
-  static uint64_t getUTCUnixTime();
-  /**
-   * @brief returns the clock time (implementing timezone and daylight settings)
-   * corresponding to the provided RTC time clicks
-   *
-   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
-   * @return the string representation of the clock time
-   */
-  static std::string getClockTime(uint64_t rtTicks);
+  static uint64_t getEpochTime();
 
 private:
+static  std::string getClockTime_str(time_t epoch, ISOFORMAT format);
+
  static void launchWithServer(std::string server);
 //   TimeSync() =
 //       default; // class is meant to be used as static singleton, this is just to
@@ -180,11 +209,13 @@ static uint8_t validateSNTPindex(uint8_t proposedIndex);
 static uint8_t numAvailableSTNP;
 static uint8_t curSNTPindex;
 static inline TimeZone referenceTimeZone;
+static inline bool tzSet=false;
 static bool RTCreferenceValid;
 static inline bool espSntp_initialized=false;
+static inline bool initializeLaunched=false; // used internally to recover missing initialization call.
 static time_t referenceUnixTime;
-//  static uint64_t referenceRTC;
- static uint64_t referenceRTC;
+//  static uint64_t referenceRTC_us;
+ static uint64_t referenceRTC_us;
 //getter to access safely ReferenceRTC in multithread mode. minimizes the time to get the value under portxxx_CRITICAL mux
 static uint64_t getReferenceRTC() ;
 static void setReferenceTime();

@@ -14,7 +14,7 @@ static portMUX_TYPE rtc_mux = portMUX_INITIALIZER_UNLOCKED;
 
 bool TimeSync::RTCreferenceValid = false;
 time_t TimeSync::referenceUnixTime = 0;
-uint64_t TimeSync::referenceRTC = 0;
+uint64_t TimeSync::referenceRTC_us = 0;
 uint8_t TimeSync::curSNTPindex = 0;
 std::string TimeSync::curSntpServer = "";
 
@@ -30,25 +30,30 @@ int8_t TimeSync::getSNTPserverIndex(const char *ntpServer) {
   return -1; // nopt found
 }
 uint8_t TimeSync::validateSNTPindex(uint8_t proposedIndex) {
-  if (proposedIndex >= numAvailableSTNP)
-  { //increases the threshold for timeout to facilitate
-    ESP_LOGI(TAG,"Could not connect SNTP servers with %dms timeout. Trying again with %dms ", timeout_ms, timeout_ms+500);
-    timeout_ms+=500;
-    return 0;}
+  if (proposedIndex >=
+      numAvailableSTNP) { // increases the threshold for timeout to facilitate
+    ESP_LOGI(TAG,
+             "Could not connect SNTP servers with %dms timeout. Trying again "
+             "with %dms ",
+             timeout_ms, timeout_ms + 500);
+    timeout_ms += 500;
+    return 0;
+  }
   return proposedIndex;
 }
 void TimeSync::initialize(uint8_t serverIndex, TimeZone tz) {
   uint8_t validatedIndex = validateSNTPindex(serverIndex);
-  referenceTimeZone = tz;
 
   initialize(NTPSERVER[validatedIndex - 1], tz);
 }
 
 void TimeSync::initialize(const char *ntpServer, TimeZone tz) {
 
+  referenceTimeZone = tz;
+  ESP_LOGI(TAG, "TZ SET TO %s", timeZones[(int)tz].POSIX.data());
   // consumes the timezone info to configure the time conversion
   setenv("TZ", timeZones[static_cast<int>(referenceTimeZone)].POSIX.data(), 1);
-  tzset();
+  // tzset();
 
   xTaskCreate(syncTask, "SNTP_SyncTask", 2048, NULL, 5, &syncTaskHandle);
   launchWithServer(ntpServer);
@@ -108,14 +113,14 @@ void TimeSync::launchWithServer(std::string server) {
 
 // void TimeSync::setReferenceRTC(uint64_t value) {
 //   portENTER_CRITICAL(&rtcMux);
-//   referenceRTC = value;
+//   referenceRTC_us = value;
 //   portEXIT_CRITICAL(&rtcMux);
 // }
 
 uint64_t TimeSync::getReferenceRTC() {
   uint64_t value;
   portENTER_CRITICAL(&rtc_mux);
-  value = referenceRTC;
+  value = referenceRTC_us;
   portEXIT_CRITICAL(&rtc_mux);
   return value;
 }
@@ -128,16 +133,16 @@ void TimeSync::setReferenceTime() {
   portENTER_CRITICAL_ISR(&rtc_mux);
   referenceUnixTime = now;
   portEXIT_CRITICAL_ISR(&rtc_mux);
-  int64_t referenceRTC_test_local = esp_timer_get_time();
+  int64_t referenceRTC_us_local = esp_timer_get_time();
   portENTER_CRITICAL_ISR(&rtc_mux);
-  referenceRTC = referenceRTC_test_local;
+  referenceRTC_us = referenceRTC_us_local;
   portEXIT_CRITICAL_ISR(&rtc_mux);
   std::string clocktime = getClockTime();
-
+  tzset();
   ESP_LOGI("TimeSync",
            "Reference captured: Unix=%" PRIu64 ", RTSC=%" PRIu64
            " at local clock time %s",
-           (uint64_t)now, (uint64_t)referenceRTC_test_local, clocktime.c_str());
+           (uint64_t)now, (uint64_t)referenceRTC_us_local, clocktime.c_str());
 
   RTCreferenceValid = true;
 }
@@ -190,52 +195,109 @@ void TimeSync::initInternalTimer() {
   );
 };
 
-std::string TimeSync::getClockTime(uint64_t rtTicks) {
-  time_t unixTime = getUTCUnixTime(rtTicks);
-  ;
-  struct tm *localTime = localtime(&unixTime);
-  char buffer[64];
-  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", localTime); // format:  2025-08-26 23:31:40
+std::string TimeSync::getClockTime(uint64_t rtTicks, TICKTYPE ttype,
+                                   ISOFORMAT format) {
+  if (!RTCreferenceValid) {
+    if (!initializeLaunched) {
+      ESP_LOGW(
+          TAG,
+          "No SNTP reference. Returning invalid time and launching SNTP synch");
+      initialize();
+      initializeLaunched = true;
+    } else
+      ESP_LOGW(TAG, "No SNTP reference. Returning invalid time.");
+    return "- no valid clock on ESP -";
+  }
+  // gets RTCcreference to local copy
+  int64_t RTCref_us_local;
+  RTCref_us_local = getReferenceRTC();
+  // calculates epoch time
+  int64_t epoch_us =
+      RTCref_us_local + (rtTicks * ((ttype == TICKTYPE::TICK_US) ? 1 : 1000));
+  time_t epoch = epoch_us / 1000000; // Convert microseconds to seconds
+
+  return getClockTime_str(epoch, format);
+};
+std::string TimeSync::getClockTime_str(time_t epoch, ISOFORMAT format) {
+
+  // time_t now = time(nullptr);
+  // struct tm localTime;
+  // localtime_r(&now, &localTime);
+
+  char buffer[32];
+  time(&epoch);
+  struct tm timeinfo;
+
+  if (format == ISOFORMAT::DATETIME_UTC ||
+      format == ISOFORMAT::DATETIME_UTC_OFFSET)
+    gmtime_r(&epoch, &timeinfo);
+  else
+    localtime_r(&epoch, &timeinfo);
+
+  strftime(buffer, sizeof(buffer), ISOFORMAT_STRINGS[static_cast<int>(format)],
+           &timeinfo);
+  if (format == ISOFORMAT::DATETIME_UTC_OFFSET) {
+    // the timeoffset given by %z does not work with UTC time,
+    // so you have to retrieve it from local time
+    // and append it to the UTC time
+    struct tm timeinfo1;
+
+    char tzOffsStr[7] = "";
+    localtime_r(&epoch, &timeinfo1);
+    strftime(tzOffsStr, sizeof(tzOffsStr), "%z", &timeinfo1);
+    size_t len = strlen(buffer); // trims wrong value
+    if (len > 5) {
+      buffer[len - 5] = '\0';
+    }
+    strcat(buffer, tzOffsStr); // appends right value
+  }
   return std::string(buffer);
 };
 
-std::string TimeSync::getClockTime() {
+std::string TimeSync::getClockTime(ISOFORMAT format) {
   if (!RTCreferenceValid) {
-    ESP_LOGW(TAG, "SNTP not initialized. Returning empty time.");
-    return "";
-  }
-  time_t now;
-  time(&now);
-  struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
+    if (!initializeLaunched) {
+      ESP_LOGW(
+          TAG,
+          "No SNTP reference. Returning invalid time and launching SNTP synch");
+      initialize();
+      initializeLaunched = true;
 
-  char buffer[64];
-  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  return std::string(buffer);
+    } else
+      ESP_LOGW(TAG, "No SNTP reference. Returning invalid time.");
+    return "- no valid clock on ESP -";
+  }
+
+  time_t now = time(nullptr);
+
+  return getClockTime_str(now, format);
 }
 
-uint64_t TimeSync::getUTCUnixTime(uint64_t rtTicks) {
+uint64_t TimeSync::getEpochTime(uint64_t rtTicks) {
   int64_t getReferenceRTC_local =
       getReferenceRTC(); // makes local copy to minimize access to the static
                          // member and potentially creating conflicts with the
                          // timer execution
   // if (!RTCreferenceValid) {
-  //   ESP_LOGW(TAG, "SNTP not initialized. Returning 0.");
+  //   ESP_LOGW(TAG, "No SNTP reference. Returning 0.");
   //   return 0;
   // }
   if (referenceUnixTime == 0 || getReferenceRTC_local == 0) {
-    ESP_LOGW("TimeSync", "Reference time not set. Returning 0.");
+
+    if (!initializeLaunched) {
+      ESP_LOGW(TAG, "No SNTP reference. Returning 0 and launching SNTP synch");
+      initialize();
+    } else
+      ESP_LOGW(TAG, "No SNTP reference. Returning 0.");
     return 0;
   }
 
-  //   int64_t deltaMicros = rtTicks - referenceRTC;
+  //   int64_t deltaMicros = rtTicks - referenceRTC_us;
   int64_t deltaMicros = rtTicks - getReferenceRTC_local;
   return referenceUnixTime + (deltaMicros / 1000000ULL);
 }
 
-uint64_t TimeSync::getUTCUnixTime() {
-  return getUTCUnixTime(esp_timer_get_time());
-}
+uint64_t TimeSync::getEpochTime() { return getEpochTime(esp_timer_get_time()); }
 
 void TimeSync::syncTask(void *arg) {
   while (true) {
@@ -244,7 +306,7 @@ void TimeSync::syncTask(void *arg) {
     if (espSntp_initialized) { // sntp completed, releases the resources
       esp_sntp_stop();
       espSntp_initialized = false;
-      timeout_ms=1000;
+      timeout_ms = 1000;
     }
     int elapsedSec = (esp_timer_get_time() - startRef) / 1e3;
     ESP_LOGI(TAG, "Sync with server %s completed in %d ms",
