@@ -85,16 +85,16 @@ static constexpr TimeZoneInfo timeZones[TIMEZONE_COUNT] = {
 // #endregion POSIXmap
 
 // SNTP server list, in order of performance as reached from Italy
-#ifdef DEBUG_BUILD
+// #ifdef DEBUG_BUILD
 //injects wrong hostnames for testing
-static constexpr const char *NTPSERVER[] = {
-    "xxxxntp.inrim.it", "xxxtime.cloudflare.com", "europe.pool.ntp.org",
-    "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
-    #else
+// static constexpr const char *NTPSERVER[] = {
+//     "xxxxntp.inrim.it", "xxxtime.cloudflare.com", "europe.pool.ntp.org",
+//     "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
+    // #else
 static constexpr const char *NTPSERVER[] = {
     "ntp.inrim.it", "time.cloudflare.com", "europe.pool.ntp.org",
     "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
-#endif
+// #endif
 enum class TICKTYPE{
   TICK_MS, // ms, from xTaskGetTickCount()
   TICK_US// us, from esp_timer_get_time()
