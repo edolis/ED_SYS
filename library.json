@@ -1,12 +1,18 @@
 {
- "name": "ED_SYS",
-  "version": "1.0.0",
+  "name": "ED_SYS",
+  "version": "1.3.0-SYSSTD",
   "description": "A library to include core System reporting activities",
-  "keywords": ["SYS", "ESP32"],
-  "frameworks": ["espidf"],
-  "platforms": ["espressif32"],
+  "keywords": [
+    "SYS",
+    "ESP32"
+  ],
+  "frameworks": [
+    "espidf"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
   "build": {
     "srcFilter": "+<*>"
   }
 }
-
