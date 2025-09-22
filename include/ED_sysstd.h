@@ -36,9 +36,28 @@ class ESP_std {
   static inline char _ESP_NetwID[MAC_STRLEN] = ""; // ESP_XX_XX_XX
   static inline char _ESP_MAC[MAC_STRLEN] = "";    // XX:XX:XX:XX:XX:XX
   static inline char _ESP_IP[IP_STRLEN] = "";      // 000.000.000.000
+  static inline char _ESP_FW_PNAME[32] = "";      //
+  static inline char _ESP_FW_VER[32] = "";      // git version v0.0.0-0-xxxxxx
   static inline char _upTime[19] = "";             // 0000d 00.00.00
+  static const inline esp_app_desc_t* app_desc = esp_app_get_description();
 
 public:
+
+  /// returns the firmware Project name
+  static const char *fwPrjName() {
+
+    return app_desc->project_name;
+  }
+  /// returns the firmware Project name
+  static const char *fwVer() {
+
+    return app_desc->version;
+  }
+  /// returns the firmware Project name
+  static const char *fwDate() {
+
+    return app_desc->date;
+  }
   /// returns the standardized network name
   static const char *NetwName() {
     if (_ESP_NetwID[0] == '\0') {
