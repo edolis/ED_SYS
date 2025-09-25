@@ -83,6 +83,7 @@ void TimeSync::launchWithServer(std::string server) {
         espSntp_initialized = false;
       }
 
+      curSntpServer = server;
       esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
       esp_sntp_setservername(0, curSntpServer.c_str());
 
@@ -93,7 +94,6 @@ void TimeSync::launchWithServer(std::string server) {
       esp_sntp_init();
 
       espSntp_initialized = true;
-      curSntpServer = server;
     }
 
     networkAvailable = true; // used by the timer callback
@@ -137,14 +137,15 @@ void TimeSync::setReferenceTime() {
   portENTER_CRITICAL_ISR(&rtc_mux);
   referenceRTC_us = referenceRTC_us_local;
   portEXIT_CRITICAL_ISR(&rtc_mux);
-  std::string clocktime = getClockTime();
+  RTCreferenceValid = true;
   tzset();
+
+  std::string clocktime = getClockTime();
   ESP_LOGI("TimeSync",
            "Reference captured: Unix=%" PRIu64 ", RTSC=%" PRIu64
            " at local clock time %s",
            (uint64_t)now, (uint64_t)referenceRTC_us_local, clocktime.c_str());
 
-  RTCreferenceValid = true;
 }
 
 void TimeSync::onTimerStatic(TimerHandle_t xTimer) {
@@ -254,6 +255,53 @@ std::string TimeSync::getClockTime_str(time_t epoch, ISOFORMAT format) {
   return std::string(buffer);
 };
 
+// Caller must provide a buffer large enough for the chosen format.
+// For "YYYY-MM-DDTHH:MM:SSZ+0200" → 26 bytes (25 chars + '\0')
+void TimeSync::getClockTime_str(time_t epoch,
+                                ISOFORMAT format,
+                                char* outBuf,
+                                size_t outSize) {
+    if (!outBuf || outSize == 0) {
+        return; // nothing to do
+    }
+
+    // Ensure epoch is set to current time if passed as 0
+    if (epoch == 0) {
+        time(&epoch);
+    }
+
+    struct tm timeinfo;
+    if (format == ISOFORMAT::DATETIME_UTC ||
+        format == ISOFORMAT::DATETIME_UTC_OFFSET) {
+        gmtime_r(&epoch, &timeinfo);
+    } else {
+        localtime_r(&epoch, &timeinfo);
+    }
+
+    // Format base time into buffer
+    strftime(outBuf, outSize,
+             ISOFORMAT_STRINGS[static_cast<int>(format)],
+             &timeinfo);
+
+    if (format == ISOFORMAT::DATETIME_UTC_OFFSET) {
+        // Append correct local offset instead of UTC's %z
+        struct tm timeinfoLocal;
+        char tzOffsStr[7] = ""; // +HHMM or -HHMM
+
+        localtime_r(&epoch, &timeinfoLocal);
+        strftime(tzOffsStr, sizeof(tzOffsStr), "%z", &timeinfoLocal);
+
+        // Trim wrong offset from UTC formatting
+        size_t len = strlen(outBuf);
+        if (len > 5) {
+            outBuf[len - 5] = '\0';
+        }
+
+        // Append correct offset
+        strncat(outBuf, tzOffsStr, outSize - strlen(outBuf) - 1);
+    }
+}
+
 std::string TimeSync::getClockTime(ISOFORMAT format) {
   if (!RTCreferenceValid) {
     if (!initializeLaunched) {
@@ -272,6 +320,31 @@ std::string TimeSync::getClockTime(ISOFORMAT format) {
 
   return getClockTime_str(now, format);
 }
+
+// Caller must provide a buffer large enough for the chosen format.
+// For ISO 8601 with timezone offset like "YYYY-MM-DDTHH:MM:SSZ+0200", that's 26 bytes.
+void TimeSync::getClockTime(ISOFORMAT format, char* outBuf, size_t outSize) {
+    if (!RTCreferenceValid) {
+        if (!initializeLaunched) {
+            ESP_LOGW(TAG,
+                     "No SNTP reference. Returning invalid time and launching SNTP synch");
+            initialize();
+            initializeLaunched = true;
+        } else {
+            ESP_LOGW(TAG, "No SNTP reference. Returning invalid time.");
+        }
+        // Always null-terminate, even for "invalid" case
+        if (outSize > 0) {
+            snprintf(outBuf, outSize, "- no valid clock on ESP -");
+        }
+        return;
+    }
+
+    time_t now = time(nullptr);
+    getClockTime_str(now, format, outBuf, outSize);
+    // ^ You'll need an overload of getClockTime_str() that writes into a buffer
+}
+
 
 uint64_t TimeSync::getEpochTime(uint64_t rtTicks) {
   int64_t getReferenceRTC_local =

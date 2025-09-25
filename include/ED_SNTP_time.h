@@ -162,7 +162,16 @@ public:
    * @return the string representation of the clock time
    */
   static std::string getClockTime(uint64_t rtTicks,TICKTYPE ttype=TICKTYPE::TICK_MS, ISOFORMAT format=ISOFORMAT::DATETIME_OFFSET);
-
+/**
+   * @brief returns the clock time in the specified format.
+   * UTC formats implement UTC times, the remaining local time with the timezone
+   * shift including daylight saving settings.
+   * Dynamic allocation free.
+   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
+   * @param ttype TICKTYPE:TICK_MS or TICKTYPE:TICK_MS to specify if the tick is in milli or micro seconds
+   * @return the string representation of the clock time
+   */
+  static void getClockTime(ISOFORMAT format, char *outBuf, size_t outSize);
 
   /**
    * @brief returns the UTC time in Unix format,
@@ -180,7 +189,9 @@ public:
 
 private:
 static  std::string getClockTime_str(time_t epoch, ISOFORMAT format);
-
+  // zero allocation version
+  static void getClockTime_str(time_t epoch, ISOFORMAT format, char *outBuf,
+                               size_t outSize);
  static void launchWithServer(std::string server);
 //   TimeSync() =
 //       default; // class is meant to be used as static singleton, this is just to
