@@ -25,7 +25,7 @@ bool fwInfo::VersionInfo::isEmpty() { return full.empty(); }
 
 const char *fwInfo::PrjName() { return getDesc()->project_name; }
 const char *fwInfo::AppCompileDate() { return getDesc()->date; }
-const fwInfo::VersionInfo &fwInfo::AppVers() { return *_Vinfo; }
+const fwInfo::VersionInfo &fwInfo::AppVers() { getDesc();return *_Vinfo; }
 const char *fwInfo::AppCompileTime() { return getDesc()->time; }
 
 const char *fwInfo::AppELFSha256() {
@@ -71,12 +71,13 @@ fwInfo::VersionInfo &fwInfo::parseVersion(const char *versionStr) {
 }
 
 const esp_app_desc_t *fwInfo::getDesc() {
-  static const esp_app_desc_t *desc = nullptr;
-  if (!desc) {
-    desc = esp_app_get_description();
-    _Vinfo = &parseVersion(desc->version);
-  }
-  return desc;
+  static std::once_flag initFlag;
+    static const esp_app_desc_t *desc = nullptr;
+    std::call_once(initFlag, []() {
+        desc = esp_app_get_description();
+        _Vinfo = &parseVersion(desc->version);
+    });
+    return desc;
 }
 
 // ===== MacAddress =====
@@ -139,7 +140,7 @@ void ESP_MACstorage::initMacs() {
     esp_mac_type_t type = static_cast<esp_mac_type_t>(i);
 
     // Skip unsupported or non-6-byte MAC types
-    if (type == ESP_MAC_IEEE802154 || type == ESP_MAC_EFUSE_EXT) {
+    if (type == ESP_MAC_IEEE802154 || type == ESP_MAC_EFUSE_EXT || type == ESP_MAC_EFUSE_CUSTOM) {
       continue;
     }
 
