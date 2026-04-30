@@ -1,0 +1,8 @@
+menu "Heap Audit Configuration"
+    config HEAP_AUDIT_ENABLE
+        bool "Enable heap fragmentation audit"
+        default n
+        help
+            Provides heap_audit_take_snapshot() and the snapshot struct.
+            Adds ~200 bytes of code, zero heap allocation.
+endmenu
