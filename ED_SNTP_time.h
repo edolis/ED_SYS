@@ -12,9 +12,7 @@
  */
 // #endregion
 
-//#include "freertos/timers.h"
 #include "freertos/FreeRTOS.h"
-//#include "freertos/task.h"
 #include "freertos/timers.h"
 #include <stdint.h>
 #include <string>
@@ -25,24 +23,22 @@
 
 namespace ED_SNTP {
 
-// #region POSIXmap
-
 enum class TimeZone {
-  CET = 0,         // Central European Time
-  WET,             // Western European Time
-  EET,             // Eastern European Time
-  UK_GMT,          // United Kingdom Time
-  EST,             // Eastern Time (US & Canada)
-  CST,             // Central Time (US & Canada)
-  MST,             // Mountain Time (US & Canada)
-  PST,             // Pacific Time (US & Canada)
-  AKST,            // Alaska Time
-  HST,             // Hawaii Standard Time
-  ARIZONA,         // Arizona (No DST)
-  SASKATCHEWAN,    // Saskatchewan (No DST)
-  MEXICO_CITY,     // Mexico City
-  BAJA_CALIFORNIA, // Baja California
-  SONORA           // Sonora (No DST)
+  CET = 0,
+  WET,
+  EET,
+  UK_GMT,
+  EST,
+  CST,
+  MST,
+  PST,
+  AKST,
+  HST,
+  ARIZONA,
+  SASKATCHEWAN,
+  MEXICO_CITY,
+  BAJA_CALIFORNIA,
+  SONORA
 };
 
 struct TimeZoneInfo {
@@ -56,187 +52,98 @@ struct TimeZoneInfo {
 #else
 #define TIMEZONE_COUNT 15
 #endif
-// Timezone description and POSIX
+
 static constexpr TimeZoneInfo timeZones[TIMEZONE_COUNT] = {
     {TimeZone::CET, "Central European Time", "CET-1CEST,M3.5.0/2,M10.5.0/3"},
     {TimeZone::WET, "Western European Time", "WET0WEST,M3.5.0/1,M10.5.0/2"},
     {TimeZone::EET, "Eastern European Time", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
     {TimeZone::UK_GMT, "United Kingdom Time", "GMT0BST,M3.5.0/1,M10.5.0/2"}
-
 #ifndef TZ_EXCLUDE_AMERICA
-,
+    ,
     {TimeZone::EST, "Eastern Time (US & Canada)", "EST5EDT,M3.2.0/2,M11.1.0/2"},
     {TimeZone::CST, "Central Time (US & Canada)", "CST6CDT,M3.2.0/2,M11.1.0/2"},
-    {TimeZone::MST, "Mountain Time (US & Canada)",
-     "MST7MDT,M3.2.0/2,M11.1.0/2"},
+    {TimeZone::MST, "Mountain Time (US & Canada)", "MST7MDT,M3.2.0/2,M11.1.0/2"},
     {TimeZone::PST, "Pacific Time (US & Canada)", "PST8PDT,M3.2.0/2,M11.1.0/2"},
     {TimeZone::AKST, "Alaska Time", "AKST9AKDT,M3.2.0/2,M11.1.0/2"},
     {TimeZone::HST, "Hawaii Standard Time", "HST10"},
     {TimeZone::ARIZONA, "Arizona (No DST)", "MST7"},
     {TimeZone::SASKATCHEWAN, "Saskatchewan (No DST)", "CST6"},
     {TimeZone::MEXICO_CITY, "Mexico City", "CST6CDT,M4.1.0/2,M10.5.0/2"},
-    {TimeZone::BAJA_CALIFORNIA, "Baja California",
-     "PST8PDT,M4.1.0/2,M10.5.0/2"},
+    {TimeZone::BAJA_CALIFORNIA, "Baja California", "PST8PDT,M4.1.0/2,M10.5.0/2"},
     {TimeZone::SONORA, "Sonora (No DST)", "MST7"}
 #endif
-
 };
 
-// #endregion POSIXmap
-
-// SNTP server list, in order of performance as reached from Italy
-// #ifdef DEBUG_BUILD
-//injects wrong hostnames for testing
-// static constexpr const char *NTPSERVER[] = {
-//     "xxxxntp.inrim.it", "xxxtime.cloudflare.com", "europe.pool.ntp.org",
-//     "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
-    // #else
 static constexpr const char *NTPSERVER[] = {
     "ntp.inrim.it", "time.cloudflare.com", "europe.pool.ntp.org",
-    "pool.ntp.org", "raspi00"}; // adds the intranet SNTP server
-// #endif
-enum class TICKTYPE{
-  TICK_MS, // ms, from xTaskGetTickCount()
-  TICK_US// us, from esp_timer_get_time()
+    "pool.ntp.org", "raspi00"};
+
+enum class TICKTYPE {
+  TICK_MS,
+  TICK_US
 };
 
 enum class ISOFORMAT {
-    DATE_ONLY,           // YYYY-MM-DD
-    DATETIME_LOCAL,      // YYYY-MM-DDTHH:MM:SS
-    DATETIME_UTC,        // YYYY-MM-DDTHH:MM:SSZ
-    DATETIME_OFFSET,     // YYYY-MM-DDTHH:MM:SS+0200
-    DATETIME_UTC_OFFSET,     // YYYY-MM-DDTHH:MM:SSZ+0200
-    WEEK_DATE,           // YYYY-Www-D
-    ORDINAL_DATE         // YYYY-DDD
+  DATE_ONLY,
+  DATETIME_LOCAL,
+  DATETIME_UTC,
+  DATETIME_OFFSET,
+  DATETIME_UTC_OFFSET,
+  WEEK_DATE,
+  ORDINAL_DATE
 };
 
 static const char* ISOFORMAT_STRINGS[] = {
-    "%Y-%m-%d",                  // DATE_ONLY
-    "%Y-%m-%dT%H:%M:%S",         // DATETIME_LOCAL
-    "%Y-%m-%dT%H:%M:%SZ",        // DATETIME_UTC (use gmtime_r)
-    "%Y-%m-%dT%H:%M:%S%z",       // DATETIME_OFFSET (post-process to insert colon)
-    "%Y-%m-%dT%H:%M:%SZ%z",      // DATETIME_UTC_OFFSET (always requires post-process to insert correct %z component)
-    "%G-W%V-%u",                 // WEEK_DATE
-    "%Y-%j"                      // ORDINAL_DATE
+    "%Y-%m-%d",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%dT%H:%M:%SZ%z",
+    "%G-W%V-%u",
+    "%Y-%j"
 };
 
-
-/**
- * @brief Provides Clock time services by aligning the ESP32 RTC data to the
- * clock time using NTP servers. Includesa a intranet SNTP as a fallback when
- * internet is not avaiilable
- *
- */
 class TimeSync {
 public:
-  /**
-   * @brief initializes the SNTP using the specified SNTP server hostname.
-   * equivalent to call to initialize(0)
-   *
-   * @param ntpServer in the hostname or IP address
-   * @param tz TimeZone identifier used to convert the UTC to local
-   */
-  static void initialize(const char *ntpServer = NTPSERVER[0],TimeZone tz= TimeZone::CET );
-  /**
-   * @brief initializes the SNTP using the static array, picking the item at the
-   * specified index. Tentatively, in order of performance. 4 elements in the
-   * array
-   *
-   * @param serverIndex between 0 and 3. Bigger values return the default
-   * (equivalent to 0)
-   * @param tz TimeZone identifier used to convert the UTC to local
-   * timezone/daylightsaving setting
-   */
+  static void initialize(const char *ntpServer = NTPSERVER[0], TimeZone tz = TimeZone::CET);
   static void initialize(uint8_t serverIndex, TimeZone tz = TimeZone::CET);
-//   static bool waitForSync(int timeoutSeconds = 10);
-  // local clock time, according to the set timezone. conforming both to
-  // timezone and its daylight saving settings or UTC depending on ttype
-  static std::string getClockTime( ISOFORMAT format=ISOFORMAT::DATETIME_UTC_OFFSET);
- /**
-   * @brief returns the clock time in the specified format.
-   * UTC formats implement UTC times, the remaining local time with the timezone
-   * shift including daylight saving settings.
-   *
-   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
-   * @param ttype TICKTYPE:TICK_MS or TICKTYPE:TICK_MS to specify if the tick is in milli or micro seconds
-   * @return the string representation of the clock time
-   */
-  static std::string getClockTime(uint64_t rtTicks,TICKTYPE ttype=TICKTYPE::TICK_MS, ISOFORMAT format=ISOFORMAT::DATETIME_OFFSET);
-/**
-   * @brief returns the clock time in the specified format.
-   * UTC formats implement UTC times, the remaining local time with the timezone
-   * shift including daylight saving settings.
-   * Dynamic allocation free.
-   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
-   * @param ttype TICKTYPE:TICK_MS or TICKTYPE:TICK_MS to specify if the tick is in milli or micro seconds
-   * @return the string representation of the clock time
-   */
+
+  static std::string getClockTime(ISOFORMAT format = ISOFORMAT::DATETIME_UTC_OFFSET);
+  static std::string getClockTime(uint64_t rtTicks, TICKTYPE ttype = TICKTYPE::TICK_MS, ISOFORMAT format = ISOFORMAT::DATETIME_OFFSET);
   static void getClockTime(ISOFORMAT format, char *outBuf, size_t outSize);
 
-  /**
-   * @brief returns the UTC time in Unix format,
-   *
-   * @param rtTicks the ESP32 RTC ticks from ESP internal RTC clock
-   * @return uint64_t the Unix representation of UTC code
-   */
   static uint64_t getEpochTime(uint64_t rtTicks);
-  /**
-   * @brief returns the current UTC time in Unix format,
-   *
-   * @return uint64_t the Unix representation of UTC current time
-   */
   static uint64_t getEpochTime();
 
 private:
-static  std::string getClockTime_str(time_t epoch, ISOFORMAT format);
-  // zero allocation version
-  static void getClockTime_str(time_t epoch, ISOFORMAT format, char *outBuf,
-                               size_t outSize);
- static void launchWithServer(std::string server);
-//   TimeSync() =
-//       default; // class is meant to be used as static singleton, this is just to
-//                // create a hidden instance to use with the timer
-//   static TimeSync &getInstance() {
-//     static TimeSync instance;
-//     return instance;
-//   };
-static  void onTimerStatic(TimerHandle_t xTimer);
-//   static void onTimerStatic(void *arg) {
-//     getInstance().tick(); // delegate to instance method
-//   }
-static std::string curSntpServer;
-static inline bool networkAvailable=false;
+  static std::string getClockTime_str(time_t epoch, ISOFORMAT format);
+  static void getClockTime_str(time_t epoch, ISOFORMAT format, char *outBuf, size_t outSize);
+  static void launchWithServer(std::string server);
+  static void onTimerStatic(TimerHandle_t xTimer);
+  static void initInternalTimer();
+  static int8_t getSNTPserverIndex(const char *ntpServer);
+  static uint8_t validateSNTPindex(uint8_t proposedIndex);
+  static void setReferenceTime();
+  static void syncTask(void *arg);
+  static void sync_cb(struct timeval *tv);
 
-static inline TimerHandle_t syncTimer=nullptr; // non static as need to be a property of the
-static void initInternalTimer();
-// checks if the provided server name matches one of the predefined ones,
-// returns -1 if not matched
-static int8_t getSNTPserverIndex(const char *ntpServer);
-
-// valideated the proposed index so that stays within the range of the array
-// of SNTP (defined in NTPSERVER)
-static uint8_t validateSNTPindex(uint8_t proposedIndex);
-
-static uint8_t numAvailableSTNP;
-static uint8_t curSNTPindex;
-static inline TimeZone referenceTimeZone;
-static inline bool tzSet=false;
-static bool RTCreferenceValid;
-static inline bool espSntp_initialized=false;
-static inline bool initializeLaunched=false; // used internally to recover missing initialization call.
-static time_t referenceUnixTime;
-//  static uint64_t referenceRTC_us;
- static uint64_t referenceRTC_us;
-//getter to access safely ReferenceRTC in multithread mode. minimizes the time to get the value under portxxx_CRITICAL mux
-static uint64_t getReferenceRTC() ;
-static void setReferenceTime();
-
-static inline TaskHandle_t syncTaskHandle = NULL;
-static void syncTask(void *arg) ;
-static void sync_cb(struct timeval *tv) ;
-static inline int64_t startRef = -1;
-static  inline int64_t timeout_ms = 1000;
-
+  // Shared state protected by s_mutex
+  static portMUX_TYPE s_mutex;
+  static bool s_initialized;           // prevent duplicate init
+  static bool s_RTCreferenceValid;
+  static time_t s_referenceUnixTime;
+  static uint64_t s_referenceRTC_us;
+  static std::string s_curSntpServer;
+  static bool s_networkAvailable;
+  static bool s_espSntp_initialized;
+  static bool s_initializeLaunched;    // auto‑recovery flag
+  static int64_t s_startRef;
+  static int64_t s_timeout_ms;
+  static uint8_t s_curSNTPindex;
+  static uint8_t s_numAvailableSNTP;
+  static TimeZone s_referenceTimeZone;
+  static TimerHandle_t s_syncTimer;
+  static TaskHandle_t s_syncTaskHandle;
 };
 
 } // namespace ED_SNTP
