@@ -16,17 +16,20 @@
 #include "ED_sysInfo.h"
 #include "esp_netif.h"
 #include "esp_wifi_types_generic.h"
+#include "esp_event.h"           // added for IP_EVENT
+#include "esp_app_desc.h"        // added for esp_app_get_description
 #include <esp_timer.h>
-#include <string>
+#include <cstring>               // added for strcpy, snprintf, memset
+#include <mutex>                 // added for thread safety
 
 namespace ED_SYS {
 
-    /**
-     * @brief defines standard elements used to manage the device in the network.
-     * It freezes the reference MAC, for instance, among the whole set of available MAC
-     * and the standardized network and mqtt name
-     *
-     */
+/**
+ * @brief defines standard elements used to manage the device in the network.
+ * It freezes the reference MAC, for instance, among the whole set of available MAC
+ * and the standardized network and mqtt name
+ *
+ */
 struct ESP_std {
 
     struct Firmware {
@@ -36,9 +39,9 @@ struct ESP_std {
     };
 
     struct Device {
-        static const char* stdMAC();  //standardized MAC name identifying this device
-        static const char* netwName(); //standardized network name of the device
-        static const char* mqttName(); //standardized MQTT client name for this device
+        static const char* stdMAC();      // standardized MAC name identifying this device
+        static const char* netwName();    // standardized network name of the device
+        static const char* mqttName();    // standardized MQTT client name for this device
         static const char* curIP();
     private:
         static void on_ip_gotten(void* handler_arg, esp_event_base_t event_base,
@@ -59,12 +62,15 @@ private:
     static inline char _ESP_mqttID[MAC_STRLEN] = "";
     static inline char _ESP_NetwID[MAC_STRLEN] = "";
     static inline char _ESP_MAC[MAC_STRLEN]    = "";
-    static inline char _ESP_IP[IP_STRLEN]      = "";
     static inline char _upTime[19]             = "";
     static inline char _time[26]               = "";
 
     static const inline esp_app_desc_t* app_desc = esp_app_get_description();
-    static inline bool _ip_event_registered = false;
+
+    // Thread‑safe IP storage
+    static inline std::mutex   s_ipMutex;           // guards _ESP_IP
+    static inline char         _ESP_IP[IP_STRLEN]   = "";
+    static inline std::once_flag s_ipEventFlag;     // ensures single handler registration
 };
 
 } // namespace ED_SYS
