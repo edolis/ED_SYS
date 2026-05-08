@@ -110,7 +110,7 @@ const char* ESP_std::Runtime::uptime() {
     uint8_t hours = (totalSeconds % 86400) / 3600;
     uint8_t minutes = (totalSeconds % 3600) / 60;
     uint8_t seconds = totalSeconds % 60;
-    snprintf(_upTime, sizeof(_upTime), "%u d %02u:%02u:%02u",
+    snprintf(_upTime, sizeof(_upTime), "%hu d %02hhu:%02hhu:%02hhu",
              days, hours, minutes, seconds);
     return _upTime;
 }
