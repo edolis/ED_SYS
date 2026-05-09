@@ -2,8 +2,7 @@
 #include <esp_log.h>
 #include <cstring>
 #include <mutex>
-
-using namespace ED_SYSINFO;
+#include <cstdio>               // for sscanf
 
 namespace ED_SYS {
 
@@ -22,10 +21,86 @@ const char* ESP_std::Firmware::date() {
     return app_desc->date;
 }
 
+// --- Helper to parse the version string once ---
+struct ParsedVersion {
+    bool parsed = false;
+    int major = 0, minor = 0, patch = 0, build = 0;
+    char tag[32] = {0};
+    char hash[16] = {0};       // includes leading 'g'
+    bool dirty = false;
+};
+
+static ParsedVersion parseVersion() {
+    ParsedVersion pv;
+    const char* ver = ESP_std::Firmware::version();
+    if (!ver || ver[0] == '\0') return pv;
+
+    // Expected format: vMAJOR.MINOR.PATCH-BUILD-gHASH[-dirty]
+    // Example: v0.0.1-4-gbb20eb4-dirty
+    char dirty_str[6] = {0};
+    int fields = sscanf(ver, "v%d.%d.%d-%d-%15s%5s",
+                        &pv.major, &pv.minor, &pv.patch, &pv.build,
+                        pv.hash, dirty_str);
+    if (fields >= 5) {
+        pv.parsed = true;
+    } else if (fields >= 3) {
+        // maybe version without build/hash? fallback
+        pv.parsed = true;
+    }
+    if (pv.parsed) {
+        if (strcmp(dirty_str, "-dirty") == 0)
+            pv.dirty = true;
+        else if (fields == 6 && strstr(ver, "-dirty"))
+            pv.dirty = true;
+    }
+
+    // Extract tag from the beginning up to first '-'
+    const char* first_dash = strchr(ver, '-');
+    if (first_dash) {
+        size_t tag_len = first_dash - ver;
+        if (tag_len < sizeof(pv.tag)) {
+            strncpy(pv.tag, ver, tag_len);
+            pv.tag[tag_len] = '\0';
+        }
+    } else {
+        // whole string is the tag
+        strncpy(pv.tag, ver, sizeof(pv.tag) - 1);
+    }
+    return pv;
+}
+
+static const ParsedVersion& cachedVersion() {
+    static ParsedVersion pv = parseVersion();
+    return pv;
+}
+
+int  ESP_std::Firmware::majorVersion() { return cachedVersion().major; }
+int  ESP_std::Firmware::minorVersion() { return cachedVersion().minor; }
+int  ESP_std::Firmware::patchVersion() { return cachedVersion().patch; }
+int  ESP_std::Firmware::buildNumber()  { return cachedVersion().build; }
+const char* ESP_std::Firmware::tag()        { return cachedVersion().tag; }
+const char* ESP_std::Firmware::shortHash()  { return cachedVersion().hash; }
+bool ESP_std::Firmware::isDirty()           { return cachedVersion().dirty; }
+const char* ESP_std::Firmware::fullHash() {
+#ifdef FW_FULL_HASH
+    return FW_FULL_HASH;
+#else
+    return "";
+#endif
+}
+
+const char* ESP_std::Firmware::buildId() {
+#ifdef FW_BUILD_ID
+    return FW_BUILD_ID;
+#else
+    return "";
+#endif
+}
+
 // ===== Device =====
 const char* ESP_std::Device::stdMAC() {
     if (_ESP_MAC[0] == '\0') {
-        strcpy(_ESP_MAC, ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE)
+        strcpy(_ESP_MAC, ED_SYSINFO::ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE)
                              .toString(_ESP_MAC, sizeof(_ESP_MAC)));
     }
     return _ESP_MAC;
@@ -33,7 +108,7 @@ const char* ESP_std::Device::stdMAC() {
 
 const char* ESP_std::Device::netwName() {
     if (_ESP_NetwID[0] == '\0') {
-        auto mac = ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE);
+        auto mac = ED_SYSINFO::ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE);
         snprintf(_ESP_NetwID, sizeof(_ESP_NetwID), "ESP_%02X_%02X_%02X",
                  mac[3], mac[4], mac[5]);
     }
@@ -42,7 +117,7 @@ const char* ESP_std::Device::netwName() {
 
 const char* ESP_std::Device::mqttName() {
     if (_ESP_mqttID[0] == '\0') {
-        auto mac = ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE);
+        auto mac = ED_SYSINFO::ESP_MACstorage::getMac(esp_mac_type_t::ESP_MAC_BASE);
         snprintf(_ESP_mqttID, sizeof(_ESP_mqttID), "ESP_%02X:%02X:%02X",
                  mac[3], mac[4], mac[5]);
     }
@@ -56,11 +131,9 @@ const char* ESP_std::Device::curIP() {
         if (_ESP_IP[0] != '\0') {
             return _ESP_IP;
         }
-        // Try to get IP immediately
         get_current_ip(_ESP_IP, sizeof(_ESP_IP));
     }
 
-    // Register IP event handler once (thread‑safe)
     std::call_once(s_ipEventFlag, [](){
         esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                    &ESP_std::Device::on_ip_gotten, nullptr);
@@ -121,5 +194,7 @@ const char* ESP_std::Runtime::curStdTime() {
     ESP_LOGI(TAG, "Current time: %s", _time);
     return _time;
 }
+
+
 
 } // namespace ED_SYS
