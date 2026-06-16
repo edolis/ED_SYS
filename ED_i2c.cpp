@@ -12,7 +12,7 @@
 
 static const char *TAG = "ed_i2c";
 
-#define I2C_MAX_RETRY_ATTEMPTS   -1
+#define I2C_MAX_RETRY_ATTEMPTS   3 //  -1:infinite, but obviously not compatible with multiple devices
 #define I2C_BASE_RETRY_DELAY_MS   200
 #define I2C_MAX_RETRY_DELAY_MS    2000
 #define PER_DEVICE_RETRY_LIMIT    3
