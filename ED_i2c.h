@@ -18,6 +18,7 @@ public:
     esp_err_t write_then_read(uint8_t dev_addr,
                               const uint8_t *write_data, size_t write_len,
                               uint8_t *read_data, size_t read_len);
+    esp_err_t probe(uint8_t dev_addr, uint32_t timeout_ms = 100);
 
     esp_err_t register_recovery_callback(uint8_t dev_addr, std::function<esp_err_t(void)> callback);
 

@@ -199,3 +199,9 @@ esp_err_t I2CBus::read(uint8_t addr, uint8_t *data, size_t len) {
 esp_err_t I2CBus::write_then_read(uint8_t addr, const uint8_t *wdata, size_t wlen, uint8_t *rdata, size_t rlen) {
     I2C_RETRY_WITH_RECOVERY(i2c_master_transmit_receive(_dev, wdata, wlen, rdata, rlen, -1), addr);
 }
+
+esp_err_t I2CBus::probe(uint8_t dev_addr, uint32_t timeout_ms) {
+    if (!m_bus_handle) return ESP_ERR_INVALID_STATE;
+    // i2c_master_probe returns ESP_OK if device ACKs within timeout
+    return i2c_master_probe(m_bus_handle, dev_addr, timeout_ms);
+}
